@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC chat</title>
+    <style>
+      #message {
+        width: 400px;
+        height: 150px;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebRTC chat app</h1>
+    <label for="localSDP">LOCAL SDP:</label>
+    <button id="createConnection">Create Connection</button>
+    <br />
+    <textarea id="localSDP" rows="10" cols="50"></textarea>
+    <br />
+
+    <label for="remoteSDP">REMOTE SDP:</label>
+    <button id="connect">Connect</button>
+    <br />
+    <textarea id="remoteSDP" rows="10" cols="50"></textarea>
+    <br />
+
+    <label for="message">MESSAGES:</label>
+    <div id="message"></div>
+    <br />
+    <input id="chatInput" type="text" />
+    <button id="sendButton">Send</button>
+
+    <script>
+      let peerConnection;
+      let dataChannel;
+      const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+
+      let localSDPArea = document.getElementById("localSDP");
+      let createConnectionBtn = document.getElementById("createConnection");
+      let remoteSDPArea = document.getElementById("remoteSDP");
+      let connectBtn = document.getElementById("connect");
+      let messageArea = document.getElementById("message");
+      let chatInput = document.getElementById("chatInput");
+      let sendButton = document.getElementById("sendButton");
+
+      createConnectionBtn.addEventListener("click", createConnection);
+      connectBtn.addEventListener("click", connectToPeer);
+      sendButton.addEventListener("click", sendMessage);
+
+      async function createConnection() {
+        peerConnection = new RTCPeerConnection({
+          iceServers,
+        });
+
+        dataChannel = peerConnection.createDataChannel("chat");
+
+        setUpDataChannel();
+
+        peerConnection.onicecandidate = (ev) => {
+          console.log("fetching ice candidates");
+          if (ev.candidate === null) {
+            console.log("fetched all ice candidates");
+            localSDPArea.value = JSON.stringify(
+              peerConnection.localDescription
+            );
+          }
+        };
+
+        try {
+          let offer = await peerConnection.createOffer();
+          console.log("offer created");
+          await peerConnection.setLocalDescription(offer);
+          console.log("offer set as local sdp");
+        } catch (err) {
+          window.alert(`an error occurred while creating connection ${err}`);
+        }
+      }
+
+      async function connectToPeer() {
+        try {
+          let remoteSdp = JSON.parse(remoteSDPArea.value);
+
+          if (!peerConnection) {
+            peerConnection = new RTCPeerConnection({
+              iceServers,
+            });
+
+            peerConnection.ondatachannel = (ev) => {
+              dataChannel = ev.channel;
+              setUpDataChannel();
+            };
+
+            peerConnection.onicecandidate = (ev) => {
+              console.log("fetching ice candidates");
+              if (ev.candidate === null) {
+                console.log("fetched all ice candidates");
+                localSDPArea.value = JSON.stringify(
+                  peerConnection.localDescription
+                );
+              }
+            };
+          }
+
+          await peerConnection.setRemoteDescription(remoteSdp);
+          console.log("remote sdp set");
+
+          if (remoteSdp.type === "offer") {
+            let answer = await peerConnection.createAnswer();
+            console.log("answer created");
+            await peerConnection.setLocalDescription(answer);
+            console.log("answer set as local sdp");
+          }
+        } catch (err) {
+          window.alert("error: ", err);
+        }
+      }
+
+      function setUpDataChannel() {
+        if (!dataChannel) return;
+
+        dataChannel.onmessage = (ev) => {
+          let message = ev.data;
+          let para = document.createElement("p");
+          let text = document.createTextNode(`Them: ${message}`);
+          para.appendChild(text);
+          messageArea.appendChild(para);
+        };
+        dataChannel.onopen = () => {
+          let para = document.createElement("p");
+          let text = document.createTextNode("Connected! Start Chatting now");
+          para.appendChild(text);
+          messageArea.appendChild(para);
+        };
+        dataChannel.onclose = () => {
+          let para = document.createElement("p");
+          let text = document.createTextNode("Disconnected!");
+          para.appendChild(text);
+          messageArea.appendChild(para);
+        };
+      }
+
+      function sendMessage() {
+        let message = chatInput.value;
+        let para = document.createElement("p");
+        let text = document.createTextNode(`You: ${message}`);
+        para.appendChild(text);
+        messageArea.appendChild(para);
+        dataChannel.send(message);
+        chatInput.value = "";
+      }
+    </script>
+  </body>
+</html>
